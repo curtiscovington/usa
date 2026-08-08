@@ -1,0 +1,72 @@
+:root {
+  color-scheme: dark;
+  background: #751726;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #751726;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+}
+
+#flag,
+.flag-fallback {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.flag-fallback {
+  overflow: hidden;
+  background: repeating-linear-gradient(
+    to bottom,
+    #b22234 0%,
+    #b22234 7.692%,
+    #f7f7f2 7.692%,
+    #f7f7f2 15.384%
+  );
+}
+
+.flag-fallback span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 53.846%;
+  background:
+    radial-gradient(circle, #fff 0 17%, transparent 18%) 0 0 / 8.33% 20%,
+    radial-gradient(circle, #fff 0 17%, transparent 18%) 4.16% 10% / 8.33% 20%,
+    #3c3b6e;
+}
+
+.flag-fallback::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 5px, rgba(255,255,255,.018) 6px, transparent 7px),
+    radial-gradient(ellipse at center, transparent 46%, rgba(7, 9, 29, .28) 118%);
+}
+
+#flag {
+  opacity: 0;
+  transition: opacity 700ms cubic-bezier(.22,1,.36,1);
+}
+
+#flag.is-ready { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  #flag { transition: none; }
+}
