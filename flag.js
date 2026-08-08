@@ -80,6 +80,25 @@ let width = 1;
 let height = 1;
 let pixelRatio = 1;
 let lastFrame = 0;
+let pointerX = 0.68;
+let pointerY = 0.5;
+let pointerTargetX = pointerX;
+let pointerTargetY = pointerY;
+let interaction = 0;
+let interactionTarget = 0;
+let tiltX = 0;
+let tiltY = 0;
+let tiltTargetX = 0;
+let tiltTargetY = 0;
+let orientationRequested = false;
+
+const dust = Array.from({ length: 30 }, (_, index) => ({
+  x: ((index * 47) % 101) / 101,
+  y: ((index * 71) % 103) / 103,
+  size: 0.35 + ((index * 13) % 11) / 10,
+  speed: 0.013 + ((index * 17) % 9) / 760,
+  phase: index * 1.93,
+}));
 
 function resize() {
   pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -99,16 +118,54 @@ function resize() {
 
 function smoothstep(value) { return value * value * (3 - 2 * value); }
 
+function clamp(value, minimum, maximum) { return Math.max(minimum, Math.min(maximum, value)); }
+
+function requestOrientation() {
+  if (orientationRequested) return;
+  orientationRequested = true;
+  if (typeof window.DeviceOrientationEvent?.requestPermission === 'function') {
+    window.DeviceOrientationEvent.requestPermission().catch(() => {});
+  }
+}
+
+function setPointer(event, active) {
+  pointerTargetX = clamp(event.clientX / window.innerWidth, 0, 1);
+  pointerTargetY = clamp(event.clientY / window.innerHeight, 0, 1);
+  interactionTarget = active ? 1 : Math.max(interactionTarget, 0.42);
+  requestOrientation();
+}
+
+canvas.addEventListener('pointerdown', (event) => {
+  canvas.setPointerCapture?.(event.pointerId);
+  setPointer(event, true);
+});
+canvas.addEventListener('pointermove', (event) => setPointer(event, event.buttons > 0));
+canvas.addEventListener('pointerup', () => { interactionTarget = 0.22; });
+canvas.addEventListener('pointercancel', () => { interactionTarget = 0; });
+window.addEventListener('deviceorientation', (event) => {
+  tiltTargetX = clamp((event.gamma || 0) / 35, -1, 1);
+  tiltTargetY = clamp((event.beta || 0) / 45, -1, 1);
+}, { passive: true });
+
 function render(timestamp = 0) {
   resize();
   if (reducedMotion.matches && lastFrame > 0) return;
   lastFrame = timestamp;
 
   const time = reducedMotion.matches ? 0.6 : timestamp / 1000;
+  pointerX += (pointerTargetX - pointerX) * 0.065;
+  pointerY += (pointerTargetY - pointerY) * 0.065;
+  interaction += (interactionTarget - interaction) * 0.055;
+  interactionTarget *= 0.985;
+  tiltX += (tiltTargetX - tiltX) * 0.025;
+  tiltY += (tiltTargetY - tiltY) * 0.025;
+
+  const gust = Math.pow(Math.max(0, Math.sin(time * 0.18 - 0.5)), 9);
+  const pulse = 0.82 + Math.sin(time * 0.29) * 0.11 + gust * 0.4;
   const flagWidth = width * 1.02;
   const flagHeight = height * 1.02;
-  const originX = (width - flagWidth) / 2;
-  const originY = (height - flagHeight) / 2;
+  const originX = (width - flagWidth) / 2 + tiltX * width * 0.006;
+  const originY = (height - flagHeight) / 2 + tiltY * height * 0.004;
   const stripWidth = Math.max(3, Math.round(4 * pixelRatio));
 
   context.fillStyle = '#751726';
@@ -120,9 +177,12 @@ function render(timestamp = 0) {
     const broad = Math.sin(u * 11.4 - time * 1.35);
     const detail = Math.sin(u * 25.8 - time * 1.9 + 0.7);
     const drift = Math.sin(u * 5.6 - time * 0.72 - 0.4);
-    const fold = broad * 0.72 + detail * 0.19 + drift * 0.09;
-    const offsetY = fold * flagHeight * 0.006 * reach;
-    const stretch = 1 + Math.cos(u * 11.4 - time * 1.35) * 0.008 * reach;
+    const touchDistance = Math.abs(u - pointerX);
+    const touchEnvelope = Math.exp(-touchDistance * touchDistance * 42) * interaction;
+    const touchWave = Math.sin(touchDistance * 34 - time * 5.2) * touchEnvelope;
+    const fold = (broad * 0.7 + detail * 0.2 + drift * 0.1) * pulse + touchWave * 0.5;
+    const offsetY = fold * flagHeight * 0.012 * reach + (pointerY - 0.5) * flagHeight * 0.01 * touchEnvelope;
+    const stretch = 1 + Math.cos(u * 11.4 - time * 1.35) * 0.01 * reach * pulse + touchWave * 0.005;
 
     const sourceX = (x / flagWidth) * texture.width;
     const sourceWidth = Math.min(texture.width - sourceX, (stripWidth / flagWidth) * texture.width + 2);
@@ -131,7 +191,8 @@ function render(timestamp = 0) {
 
     context.drawImage(texture, sourceX, 0, sourceWidth, texture.height, destinationX, destinationY, stripWidth + 1, flagHeight * stretch);
 
-    const light = Math.cos(u * 11.4 - time * 1.35) * 0.115 + Math.cos(u * 25.8 - time * 1.9) * 0.033;
+    const daylightSweep = Math.exp(-Math.pow(u - ((time * 0.032) % 1.5 - 0.22), 2) * 54) * 0.05;
+    const light = Math.cos(u * 11.4 - time * 1.35) * 0.105 * pulse + Math.cos(u * 25.8 - time * 1.9) * 0.028 + daylightSweep;
     if (light > 0) {
       context.globalCompositeOperation = 'screen';
       context.fillStyle = `rgba(229, 235, 255, ${light})`;
@@ -155,6 +216,19 @@ function render(timestamp = 0) {
   vignette.addColorStop(1, 'rgba(4,5,20,.24)');
   context.fillStyle = vignette;
   context.fillRect(0, 0, width, height);
+
+  context.save();
+  context.globalCompositeOperation = 'screen';
+  for (const mote of dust) {
+    const x = ((mote.x + time * mote.speed) % 1.08) * width;
+    const y = (mote.y + Math.sin(time * 0.15 + mote.phase) * 0.012) * height;
+    const alpha = (0.012 + Math.sin(time * 0.42 + mote.phase) * 0.007) * (0.55 + gust * 0.45);
+    context.fillStyle = `rgba(220, 232, 255, ${Math.max(0, alpha)})`;
+    context.beginPath();
+    context.arc(x, y, mote.size * pixelRatio, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
 
   if (!canvas.classList.contains('is-ready')) canvas.classList.add('is-ready');
   if (!reducedMotion.matches) requestAnimationFrame(render);
